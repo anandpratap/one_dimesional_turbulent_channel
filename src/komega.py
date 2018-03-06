@@ -1,14 +1,17 @@
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-
+from objectives import TikhonovObjective
 from laminar import LaminarEquation
-from utils import calc_dp, load_solution_komega, load_data
+from utils import calc_dp, load_solution_komega, calc_initial_condition
 from schemes import diff, diff2
 #import komegaf as komegaf
 import sys
+import adolc as ad
 sys.path.append("1d_dns_data_loader")
 from dnsdataloader import DNSDataLoader
+from nn import NeuralNetwork
+
 def get_var(q):
     n = np.size(q)
     ny = n/3
@@ -17,6 +20,7 @@ def get_var(q):
     omega = q[2:n:3]
     return u, k, omega
 
+            
 class KOmegaEquation(LaminarEquation):
     def __init__(self, y, u, k, omega, Retau, verbose=False):
         self.y = np.copy(y)
@@ -47,7 +51,7 @@ class KOmegaEquation(LaminarEquation):
         self.beta_s = 0.09
         
         self.beta = np.ones(ny, dtype=np.float)
-
+#        self.nn = NeuralNetwork()
 
     def calc_momentum_residual(self, q):
         u, k, omega = get_var(q)
@@ -101,8 +105,10 @@ class KOmegaEquation(LaminarEquation):
  #       dRdqf = komegaf.calc_jacobian(self.y.astype(np.float64), q.astype(np.float64), np.float64(self.dp), self.beta.astype(np.floa#t64))
   #      return dRdqf.T
 
-    def calc_residual(self, q):
+    def calc_residual(self, q, dtype=None):
         R = np.zeros_like(q)
+        if dtype == ad.adouble:
+            R = ad.adouble(R)
         n = self.n
         R[0::3], R[1::3], R[2::3] = self.calc_momentum_residual(q), self.calc_k_residual(q), self.calc_omega_residual(q)
         #R = komegaf.calc_residual(self.y.astype(np.float64), q.astype(np.float64), np.float64(self.dp), self.beta.astype(np.float64))
@@ -140,9 +146,10 @@ class KOmegaEquation(LaminarEquation):
         q = q.astype(np.float64)
         n = self.n
         u, k, omega = get_var(q)
-        np.savetxt("%s/u"%self.writedir, u)
-        np.savetxt("%s/k"%self.writedir, k)
-        np.savetxt("%s/omega"%self.writedir, omega)
+        np.savez("solution_kom.npz", y=self.y, u=u, k=k, omega=omega)
+        #np.savetxt("%s/u"%self.writedir, u)
+        #np.savetxt("%s/k"%self.writedir, k)
+        #np.savetxt("%s/omega"%self.writedir, omega)
 
     def plot(self, q):
         u, k, omega = get_var(q)
@@ -176,16 +183,31 @@ if __name__ == "__main__":
     verbose = args.verbose
 
     dirname ="base_solution"
-    y, u, k, omega = load_solution_komega(dirname)
+    y, u, k, omega = load_solution_komega("solution_kom_base.npz")
+
+    #ui, ki, omegai = calc_initial_condition(y, Retau, 1e-4)
+
+    # plt.figure()
+    # plt.plot(u)
+    # plt.plot(ui)
+
+    # plt.figure()
+    # plt.plot(omega)
+    # plt.plot(omegai)
+    # plt.show()
+    
     Retau = Retau
     eqn = KOmegaEquation(y, u, k, omega, Retau, verbose=verbose)
     eqn.dt = dt
     eqn.tol = tol
     eqn.maxiter = maxiter
     eqn.force_boundary = force_boundary
-    eqn.writedir = "solution"
+    #eqn.writedir = "solution"
     eqn.solve()
     #dns, wilcox_sw, wilcox = load_data()
+
+    ui, ki, omegai = calc_initial_condition(y, Retau, eqn.nu)
+    
     loader = DNSDataLoader(Retau, y)
     data = loader.data
     print data.keys()
@@ -193,6 +215,8 @@ if __name__ == "__main__":
     plt.figure(11)
     plt.semilogx(eqn.yp, eqn.up, 'r-', label=r'$k-\omega$')
     plt.semilogx(data["y+"], data["u+"], 'b-', label=r'DNS')
+ #   plt.semilogx(eqn.yp,ui/eqn.utau, 'g-', label=r'Init')
+
     #plt.semilogx(wilcox.y, wilcox.u, 'g-', label=r'Wilcox $k-\omega$')
     plt.xlabel(r"$y^+$")
     plt.ylabel(r"$u^+$")
@@ -202,11 +226,39 @@ if __name__ == "__main__":
     plt.figure(2)
     plt.semilogx(eqn.yp, eqn.kp, 'r-', label=r'$k-\omega$')
     plt.semilogx(data["y+"], data["k+"], 'b-', label=r'DNS')
+  #  plt.semilogx(eqn.yp, ki/eqn.utau/eqn.utau, 'g-', label=r'Init')
+
+#    plt.figure(3)
+#    plt.semilogx(eqn.yp, eqn.omegap, 'r-', label=r'$k-\omega$')
+#    plt.semilogx(data["y+"], data["k+"], 'b-', label=r'DNS')
+#omega*self.nu/self.utau**2
+#    plt.semilogx(eqn.yp,omegai/eqn.utau/eqn.utau*eqn.nu, 'g-', label=r'Init')
+
     #plt.semilogx(dns.yp[::5], dns.k[::5], 'bo', label=r'DNS', mfc="white")
     #plt.semilogx(wilcox.y, wilcox.k, 'g-', label=r'Wilcox $k-\omega$')
+    
     plt.xlabel(r"$y^+$")
     plt.ylabel(r"$u^+$")
     plt.legend(loc=2)
     plt.tight_layout()
+
+    udns = data["u+"]*eqn.utau
+    eqn.objective = TikhonovObjective(udns, fac=1e-6, var=0, nvar=3)
+    dJ = eqn.calc_sensitivity()
+
+    plt.figure()
+    plt.plot(dJ)
+    
+    for i in range(100):
+        dJ = eqn.calc_sensitivity()
+        dJ = np.reshape(dJ, eqn.beta.shape)
+        eqn.beta = eqn.beta - dJ/np.abs(dJ).max()*0.05
+        eqn.solve()
+        #plt.figure()
+        #plt.plot(eqn.beta)
+        #plt.show()
+        
+    plt.figure(11)
+    plt.semilogx(eqn.yp, eqn.up, 'c-', label=r'$k-\omega$')
     plt.show()
     

@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import linalg
 import scipy.sparse as sp
-from utils import calc_dp, load_solution_laminar, load_data
+from utils import calc_dp, load_solution_laminar
 from schemes import diff, diff2
 from objectives import TestObjective
 import adolc as ad
