@@ -1,0 +1,3 @@
+[submodule "modules/1d_dns_data_loader"]
+	path = modules/1d_dns_data_loader
+	url = git@github.com:anandpratap/1d_dns_data_loader.git
