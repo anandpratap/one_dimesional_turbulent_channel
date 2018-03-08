@@ -1,3 +1,6 @@
 [submodule "modules/1d_dns_data_loader"]
 	path = modules/1d_dns_data_loader
 	url = git@github.com:anandpratap/1d_dns_data_loader.git
+[submodule "modules/ml_stack"]
+	path = modules/ml_stack
+	url = git@github.com:anandpratap/ml_stack.git
