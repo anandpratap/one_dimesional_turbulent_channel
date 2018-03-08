@@ -1,7 +1,9 @@
 import numpy as np
 from laminar import calc_jacobian
 import adolc as ad
+import pickle
 def sigmoid(x):
+    #return x*x
     return 1.0/(1.0 + np.exp(-x))
 
 def dsigmoid(x):
@@ -9,6 +11,10 @@ def dsigmoid(x):
 
 
 class NeuralNetwork(object):
+    """
+    
+    
+    """
     def __init__(self, sizes = [2, 10, 1]):
         self.nlayer = len(sizes)
         self.sizes = sizes
@@ -30,7 +36,13 @@ class NeuralNetwork(object):
             self.weights.append(weights)
             self.biases.append(bias)
         self.n = self.nw + self.nb
-    def eval(self, x):
+
+    def veval(self, x):
+        np_veval = np.vectorize(self.eval)
+        return np_veval(x)
+    
+    def eval(self, *args):
+        x = np.array(args).T
         assert x.size == self.sizes[0]
         for i in range(1, self.nlayer):
             y = np.dot(self.weights[i-1], x) + self.biases[i-1]
@@ -45,16 +57,13 @@ class NeuralNetwork(object):
         start = 0
         for i in range(1, self.nlayer):
             end = start + self.weights[i-1].size
- #           print start, end
             self.weights[i-1] = np.reshape(beta[start:end], self.weights[i-1].shape)
             start = end
 
         for i in range(1, self.nlayer):
             end = start + self.biases[i-1].size
-#            print start, end
             self.biases[i-1] = np.reshape(beta[start:end], self.biases[i-1].shape)
             start = end
-  #      print end
 
     def dydbeta(self, x, beta):
         beta_c = beta.copy()
@@ -71,10 +80,26 @@ class NeuralNetwork(object):
         dJdbeta = calc_jacobian(beta, tag=tag, sparse=False)
         #print dJdbeta.shape
         return dJdbeta.reshape(beta_c.shape)
+
+
+    def save(self, filename="network.nn"):
+        with open(filename, 'wb') as f:
+            print self.__dict__
+            pickle.dump(self.__dict__, f)
+
+
+    def load(self, filename="network.nn"):
+        with open(filename, 'rb') as f:
+            tmp_dict = pickle.load(f)
+        self.__dict__.update(tmp_dict) 
+        assert self.n == self.nb + self.nw
+        assert self.nlayer == len(self.sizes)
+        
+
         
 if __name__ == "__main__":
     def func(x):
-        return 2.0*x*x + 10.0
+        return 2.0*x + 10.0
 
     xd = np.random.randn(100)
     yd = func(xd)
@@ -85,17 +110,17 @@ if __name__ == "__main__":
     #plot(x, y, 'x')
     #show()
     
-    nn = NeuralNetwork(sizes=[1, 4, 1])
+    nn = NeuralNetwork(sizes=[1, 1])
     y = nn.eval(np.array([1.0]))
     print y
-    beta = np.random.randn(nn.n)*0.01
+    beta = np.random.randn(nn.n)*0.02
 
-    for j in range(5000):
+    for j in range(10000):
         nn.set_from_vector(beta)
         dJdbeta = np.zeros_like(beta)
         J = 0.0
         for i in range(len(xd)):
-            xin = np.array([xd[i]])
+            xin = xd[i]
             yeval = nn.eval(xin)
             #print yeval
             J += (yeval - yd[i])**2
@@ -106,6 +131,7 @@ if __name__ == "__main__":
         if j%100 == 0:
             print j, J
         #print beta
+
     yeval = []
     for i in range(len(xd)):
         xin = np.array([xd[i]])
@@ -113,5 +139,15 @@ if __name__ == "__main__":
     figure()
     plot(xd, yd, 'b.')
     plot(xd, yeval, 'rx')
+
+    nn.save()
+    nn.load()
+
+    yeval = []
+    for i in range(len(xd)):
+        xin = np.array([xd[i]])
+        yeval.append(nn.eval(xin))
+    plot(xd, yeval, 'g.')
+
     show()
         

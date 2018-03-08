@@ -22,7 +22,7 @@ def get_var(q):
 
             
 class KOmegaEquation(LaminarEquation):
-    def __init__(self, y, u, k, omega, Retau, verbose=False):
+    def __init__(self, y, u, k, omega, Retau, verbose=False, model=None):
         self.y = np.copy(y)
         ny = np.size(self.y)
         self.verbose = verbose
@@ -49,8 +49,14 @@ class KOmegaEquation(LaminarEquation):
         self.gamma_w = 13.0/25.0
         self.sigma_k = 0.6
         self.beta_s = 0.09
-        
-        self.beta = np.ones(ny, dtype=np.float)
+        self.model = model
+        if self.model == None or self.model == "linear":
+            self.beta = np.ones(ny, dtype=np.float)
+        elif self.model == 'nn':
+            self.nn = NeuralNetwork(sizes = [1, 3, 1])
+            self.beta = np.random.randn(self.nn.n)*1e-2
+            self.nn.set_from_vector(self.beta)
+            #self.beta = np.ones(ny, dtype=np.float)
 #        self.nn = NeuralNetwork()
 
     def calc_momentum_residual(self, q):
@@ -92,7 +98,18 @@ class KOmegaEquation(LaminarEquation):
         ky = diff(self.y, k)
         omegay = diff(self.y, omega)
         omegayy = diff2(self.y, omega)
-        R = self.beta*gamma_w*uy**2 - beta_0*omega**2 + nu*omegayy + sigma_w*(omegay*(ky/omega - k*omegay/omega**2) + k/omega*omegayy)
+        if self.model == None:
+            fac = self.beta
+        elif self.model == "linear":
+            fac = 1.0 + 2*y*y
+            #fac[0] = 1.0
+        elif self.model == "nn":
+            #print self.beta.shape
+            self.nn.set_from_vector(self.beta)
+            fac = 1.0 + self.nn.veval(self.y)
+            #fac[0] = 1.0
+        #print fac.shape
+        R = fac*gamma_w*uy**2 - beta_0*omega**2 + nu*omegayy + sigma_w*(omegay*(ky/omega - k*omegay/omega**2) + k/omega*omegayy)
         R[0] = -(omega[0] - 5000000*nu/0.005**2)
         R[-1] = 1/(y[-1] - y[-2])*(1.5*omega[-1] - 2.0*omega[-2] + 0.5*omega[-3])
         return R
@@ -184,7 +201,7 @@ if __name__ == "__main__":
 
     dirname ="base_solution"
     y, u, k, omega = load_solution_komega("solution_kom_base.npz")
-
+    ub = u.copy()
     #ui, ki, omegai = calc_initial_condition(y, Retau, 1e-4)
 
     # plt.figure()
@@ -194,10 +211,10 @@ if __name__ == "__main__":
     # plt.figure()
     # plt.plot(omega)
     # plt.plot(omegai)
-    # plt.show()
+    #plt.show()
     
     Retau = Retau
-    eqn = KOmegaEquation(y, u, k, omega, Retau, verbose=verbose)
+    eqn = KOmegaEquation(y, u, k, omega, Retau, verbose=verbose, model='nn')
     eqn.dt = dt
     eqn.tol = tol
     eqn.maxiter = maxiter
@@ -214,7 +231,7 @@ if __name__ == "__main__":
     plt.ioff()
     plt.figure(11)
     plt.semilogx(eqn.yp, eqn.up, 'r-', label=r'$k-\omega$')
-    plt.semilogx(data["y+"], data["u+"], 'b-', label=r'DNS')
+    #plt.semilogx(data["y+"], data["u+"], 'b-', label=r'DNS')
  #   plt.semilogx(eqn.yp,ui/eqn.utau, 'g-', label=r'Init')
 
     #plt.semilogx(wilcox.y, wilcox.u, 'g-', label=r'Wilcox $k-\omega$')
@@ -241,19 +258,34 @@ if __name__ == "__main__":
     plt.ylabel(r"$u^+$")
     plt.legend(loc=2)
     plt.tight_layout()
+    eqn.save(eqn.q)
+    
+    #plt.show()
+    yl, ul, kl, omegal = load_solution_komega("solution_kom_linear.npz")
 
-    udns = data["u+"]*eqn.utau
-    eqn.objective = TikhonovObjective(udns, fac=1e-6, var=0, nvar=3)
+    plt.figure(11)
+    plt.semilogx(eqn.yp, ul/eqn.utau, 'b-', label=r'QUAD')
+
+    udns = ul
+    eqn.objective = TikhonovObjective(udns, fac=1e-8, var=0, nvar=3)
     dJ = eqn.calc_sensitivity()
 
     plt.figure()
     plt.plot(dJ)
-    
-    for i in range(100):
-        dJ = eqn.calc_sensitivity()
-        dJ = np.reshape(dJ, eqn.beta.shape)
-        eqn.beta = eqn.beta - dJ/np.abs(dJ).max()*0.05
+    for i in range(100000):
         eqn.solve()
+        dJ = eqn.calc_sensitivity()
+        eqn.beta = eqn.beta - dJ/np.abs(dJ)*0.00001
+        #eqn.beta[0] = eqn.beta[0] - dJ[0]/np.linalg.norm(dJ[0])*0.1
+        J = eqn.objective.objective(eqn.q, eqn.beta)
+        if i%1000:
+            print i, J
+        #print dJ.shape
+        #print eqn.beta.shape
+        # print 
+        #print nn_
+        #eqn.beta = eqn.beta - dJ/np.abs(dJ).max()*0.05
+        
         #plt.figure()
         #plt.plot(eqn.beta)
         #plt.show()
@@ -261,4 +293,11 @@ if __name__ == "__main__":
     plt.figure(11)
     plt.semilogx(eqn.yp, eqn.up, 'c-', label=r'$k-\omega$')
     plt.show()
+
+    tfac = 1.0 + 2.0*eqn.y*eqn.y
+    fac = 1.0 + eqn.nn.veval(eqn.y)
+    
+    plot(eqn.y, tfac, "b-")
+    plot(eqn.y, fac, "rx-")
+    show()
     

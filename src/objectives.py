@@ -38,7 +38,8 @@ class TikhonovObjective(object):
         self.nvar = nvar
     def objective(self, val, param):
         assert(np.size(val)/self.nvar == np.size(self.val_target))
-        J_obs = sum((val[self.var::self.nvar] - self.val_target)**2)
+        u = val[self.var::self.nvar]
+        J_obs = sum((u - self.val_target)**2)
         J_reg = sum(param**2)
         J = J_obs + J_reg*self.fac
         return J

@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from schemes import diff
 import sys
-sys.path.append("1d_dns_data_loader")
+sys.path.append("../modules/1d_dns_data_loader")
 from dnsdataloader import DNSDataLoader
 
 class Data(object):

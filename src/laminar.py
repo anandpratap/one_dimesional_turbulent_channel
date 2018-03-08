@@ -82,6 +82,7 @@ class LaminarEquation(object):
         ad.trace_on(tag)
         ad.independent(beta)
         F = self.objective.objective(q, beta)
+        #print ad.value(F)
         ad.dependent(F)
         ad.trace_off()
         beta = beta_c
@@ -132,7 +133,7 @@ class LaminarEquation(object):
         delJdelbeta = self.calc_delJ_delbeta(q, beta)
         delRdelbeta = self.calc_delR_delbeta(q)
         dJdbeta = delJdelbeta + psi.transpose().dot(delRdelbeta)
-        return dJdbeta.T
+        return dJdbeta.reshape(beta.shape)
 
     def calc_sensitivity_fd(self, dbeta=1e-4):
         n = self.beta.size
